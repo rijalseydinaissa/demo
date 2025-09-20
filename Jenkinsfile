@@ -13,7 +13,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/TON_USER/TON_REPO.git'
+                checkout scm
             }
         }
 
