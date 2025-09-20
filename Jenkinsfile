@@ -5,6 +5,10 @@ pipeline {
         timestamps()
     }
 
+    environment {
+        APP_PORT = '8090' // le port de l'app Spring Boot
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -14,39 +18,38 @@ pipeline {
 
         stage('Build with Maven') {
             steps {
-                sh './mvnw clean package'
+                // Build du projet Spring Boot
+                sh './mvnw clean package -DskipTests'
             }
         }
 
-        stage('Build & Push Docker Image') {
+        stage('Run App') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'DOCKER_HUB_Java', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    script {
-                        def appName = 'demo' // Nom de l'application
-                        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'latest'
-                        def safeTag = branchName.replaceAll('[^A-Za-z0-9._-]', '-')
-                        def dockerImage = "${DOCKER_USER}/${appName}:${safeTag}"
-
-                        sh """
-                            set -e
-                            echo "Building Docker image: ${dockerImage}"
-                            docker build -t "${dockerImage}" .
-
-                            echo "Logging into Docker Hub..."
-                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-
-                            echo "Pushing Docker image: ${dockerImage}"
-                            docker push "${dockerImage}"
-                        """
-                    }
+                script {
+                    // Stopper l’ancienne instance si elle existe
+                    sh '''
+                        PID=$(lsof -t -i:${APP_PORT} || true)
+                        if [ ! -z "$PID" ]; then kill -9 $PID; fi
+                    '''
+                    // Lancer le jar Spring Boot sur APP_PORT
+                    sh "nohup java -jar target/*.jar --server.port=${APP_PORT} > app.log 2>&1 &"
                 }
             }
         }
 
-        stage('Deploy to Render') {
+        stage('Expose with Ngrok') {
             steps {
-                withCredentials([string(credentialsId: 'RENDER_HOOK', variable: 'RENDER_HOOK_URL')]) {
-                    sh 'curl -X POST "$RENDER_HOOK_URL"'
+                script {
+                    // Stopper l’ancien ngrok
+                    sh 'pkill ngrok || true'
+                    // Lancer ngrok
+                    sh "nohup ngrok http ${APP_PORT} > ngrok.log 2>&1 & sleep 5"
+                    // Récupérer l’URL publique ngrok et l’afficher dans les logs
+                    sh '''
+                        curl http://127.0.0.1:4040/api/tunnels > ngrok_tunnels.json
+                        echo "=== URL publique Ngrok ==="
+                        cat ngrok_tunnels.json | grep -o '"public_url":"[^"]*' | cut -d '"' -f4
+                    '''
                 }
             }
         }
