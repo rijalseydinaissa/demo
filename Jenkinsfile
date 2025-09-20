@@ -29,12 +29,12 @@ pipeline {
             }
         }
 
-        stage('Run with Docker') {
+        /*stage('Run with Docker') {
             steps {
                 sh 'docker rm -f demo-app || true'
                 sh 'docker run -d --name demo-app -p 8080:8080 $DOCKER_IMAGE'
             }
-        }
+        }*/
     }
 
     post {
